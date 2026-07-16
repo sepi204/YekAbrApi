@@ -19,6 +19,7 @@ public sealed class CloudController : ControllerBase
 {
     private readonly IGoogleDriveConnectionService _googleDriveConnectionService;
     private readonly IDropboxConnectionService _dropboxConnectionService;
+    private readonly IMegaConnectionService _megaConnectionService;
     private readonly ICloudAccountService _cloudAccountService;
     private readonly ICloudFileService _cloudFileService;
     private readonly ICurrentUserService _currentUserService;
@@ -28,6 +29,7 @@ public sealed class CloudController : ControllerBase
     public CloudController(
         IGoogleDriveConnectionService googleDriveConnectionService,
         IDropboxConnectionService dropboxConnectionService,
+        IMegaConnectionService megaConnectionService,
         ICloudAccountService cloudAccountService,
         ICloudFileService cloudFileService,
         ICurrentUserService currentUserService,
@@ -36,6 +38,7 @@ public sealed class CloudController : ControllerBase
     {
         _googleDriveConnectionService = googleDriveConnectionService;
         _dropboxConnectionService = dropboxConnectionService;
+        _megaConnectionService = megaConnectionService;
         _cloudAccountService = cloudAccountService;
         _cloudFileService = cloudFileService;
         _currentUserService = currentUserService;
@@ -113,6 +116,27 @@ public sealed class CloudController : ControllerBase
             result,
             _dropboxOptions.FrontendSuccessRedirectUrl,
             _dropboxOptions.FrontendFailureRedirectUrl);
+    }
+
+    /// <summary>
+    /// Connect a MEGA account with email/password (optional MFA). MEGA does not use OAuth.
+    /// </summary>
+    [Authorize]
+    [HttpPost("mega/connect")]
+    [ProducesResponseType(typeof(ApiResponse<ConnectedCloudAccountDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<ConnectedCloudAccountDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ApiResponse<ConnectedCloudAccountDto>>> ConnectMega(
+        [FromBody] ConnectMegaAccountRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId))
+        {
+            return Unauthorized();
+        }
+
+        var result = await _megaConnectionService.ConnectAsync(_currentUserService.UserId, request, cancellationToken);
+        return this.ToApiResponse(result);
     }
 
     [Authorize]

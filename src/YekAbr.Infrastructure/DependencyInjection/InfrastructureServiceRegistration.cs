@@ -10,6 +10,7 @@ using YekAbr.Domain.Interfaces;
 using YekAbr.Infrastructure.Cloud;
 using YekAbr.Infrastructure.Cloud.Dropbox;
 using YekAbr.Infrastructure.Cloud.GoogleDrive;
+using YekAbr.Infrastructure.Cloud.Mega;
 using YekAbr.Infrastructure.Cloud.Transfers;
 using YekAbr.Infrastructure.Identity;
 using YekAbr.Infrastructure.Persistence;
@@ -34,6 +35,7 @@ public static class InfrastructureServiceRegistration
         services.Configure<CloudTokenEncryptionOptions>(configuration.GetSection(CloudTokenEncryptionOptions.SectionName));
         services.Configure<GoogleDriveOptions>(configuration.GetSection(GoogleDriveOptions.SectionName));
         services.Configure<DropboxOptions>(configuration.GetSection(DropboxOptions.SectionName));
+        services.Configure<MegaOptions>(configuration.GetSection(MegaOptions.SectionName));
 
         services.AddDataProtection();
         services.AddMemoryCache();
@@ -93,11 +95,14 @@ public static class InfrastructureServiceRegistration
 
         services.AddHttpClient<IGoogleDriveProviderClient, GoogleDriveProviderClient>();
         services.AddHttpClient<IDropboxProviderClient, DropboxProviderClient>();
+        services.AddScoped<IMegaProviderClient, MegaProviderClient>();
         services.AddScoped<ICloudProviderClient>(sp => sp.GetRequiredService<IGoogleDriveProviderClient>());
         services.AddScoped<ICloudProviderClient>(sp => sp.GetRequiredService<IDropboxProviderClient>());
+        services.AddScoped<ICloudProviderClient>(sp => sp.GetRequiredService<IMegaProviderClient>());
 
         services.AddScoped<IGoogleDriveConnectionService, GoogleDriveConnectionService>();
         services.AddScoped<IDropboxConnectionService, DropboxConnectionService>();
+        services.AddScoped<IMegaConnectionService, MegaConnectionService>();
         services.AddScoped<ICloudAccountService, CloudAccountService>();
         services.AddScoped<ICloudAccountCredentialService, CloudAccountCredentialService>();
         services.AddScoped<ICloudFileService, CloudFileService>();
@@ -116,6 +121,7 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IValidator<MoveCloudItemRequest>, MoveCloudItemRequestValidator>();
         services.AddScoped<IValidator<RenameCloudItemRequest>, RenameCloudItemRequestValidator>();
         services.AddScoped<IValidator<CreateCloudTransferJobRequest>, CreateCloudTransferJobRequestValidator>();
+        services.AddScoped<IValidator<ConnectMegaAccountRequest>, ConnectMegaAccountRequestValidator>();
 
         return services;
     }
