@@ -37,6 +37,17 @@ public sealed class CloudProviderClientFactory : ICloudProviderClientFactory
         return provider;
     }
 
+    public ICloudFileProviderClient GetFileProvider(CloudProviderType providerType)
+    {
+        var provider = GetProvider(providerType);
+        if (provider is ICloudFileProviderClient fileProvider)
+        {
+            return fileProvider;
+        }
+
+        throw new UnsupportedCloudProviderException(providerType);
+    }
+
     public bool IsSupported(CloudProviderType providerType)
     {
         return _providers.ContainsKey(providerType);

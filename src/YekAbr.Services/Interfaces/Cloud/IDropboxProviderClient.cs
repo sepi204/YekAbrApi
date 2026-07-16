@@ -1,12 +1,11 @@
-using YekAbr.Domain.Models;
 using YekAbr.Services.DTOs.Cloud;
 
 namespace YekAbr.Services.Interfaces.Cloud;
 
 /// <summary>
-/// Google Drive provider: OAuth + file operations.
+/// Dropbox provider: OAuth + file operations.
 /// </summary>
-public interface IGoogleDriveProviderClient : ICloudFileProviderClient, ICloudTokenRefreshProvider
+public interface IDropboxProviderClient : ICloudFileProviderClient, ICloudTokenRefreshProvider
 {
     string BuildAuthorizationUrl(string state);
 

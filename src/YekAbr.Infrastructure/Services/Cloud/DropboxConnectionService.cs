@@ -4,31 +4,31 @@ using Microsoft.Extensions.Options;
 using YekAbr.Domain.Entities;
 using YekAbr.Domain.Enums;
 using YekAbr.Domain.Interfaces;
-using YekAbr.Infrastructure.Cloud.GoogleDrive;
+using YekAbr.Infrastructure.Cloud.Dropbox;
 using YekAbr.Services.Common.Responses;
 using YekAbr.Services.DTOs.Cloud;
 using YekAbr.Services.Interfaces.Cloud;
 
 namespace YekAbr.Infrastructure.Services.Cloud;
 
-public sealed class GoogleDriveConnectionService : IGoogleDriveConnectionService
+public sealed class DropboxConnectionService : IDropboxConnectionService
 {
-    private readonly IGoogleDriveProviderClient _googleDriveProvider;
+    private readonly IDropboxProviderClient _dropboxProvider;
     private readonly ICloudOAuthStateStore _oauthStateStore;
     private readonly IConnectedCloudAccountRepository _accountRepository;
     private readonly ICloudTokenEncryptionService _tokenEncryptionService;
-    private readonly GoogleDriveOptions _options;
-    private readonly ILogger<GoogleDriveConnectionService> _logger;
+    private readonly DropboxOptions _options;
+    private readonly ILogger<DropboxConnectionService> _logger;
 
-    public GoogleDriveConnectionService(
-        IGoogleDriveProviderClient googleDriveProvider,
+    public DropboxConnectionService(
+        IDropboxProviderClient dropboxProvider,
         ICloudOAuthStateStore oauthStateStore,
         IConnectedCloudAccountRepository accountRepository,
         ICloudTokenEncryptionService tokenEncryptionService,
-        IOptions<GoogleDriveOptions> options,
-        ILogger<GoogleDriveConnectionService> logger)
+        IOptions<DropboxOptions> options,
+        ILogger<DropboxConnectionService> logger)
     {
-        _googleDriveProvider = googleDriveProvider;
+        _dropboxProvider = dropboxProvider;
         _oauthStateStore = oauthStateStore;
         _accountRepository = accountRepository;
         _tokenEncryptionService = tokenEncryptionService;
@@ -52,20 +52,20 @@ public sealed class GoogleDriveConnectionService : IGoogleDriveConnectionService
 
             await _oauthStateStore.StoreAsync(state, userId, lifetime, cancellationToken);
 
-            var authorizationUrl = _googleDriveProvider.BuildAuthorizationUrl(state);
+            var authorizationUrl = _dropboxProvider.BuildAuthorizationUrl(state);
             return Result<CloudConnectUrlDto>.Succeeded(
                 new CloudConnectUrlDto { AuthorizationUrl = authorizationUrl },
-                "لینک اتصال به گوگل درایو با موفقیت ایجاد شد.");
+                "لینک اتصال به دراپ‌باکس با موفقیت ایجاد شد.");
         }
         catch (InvalidOperationException exception)
         {
-            _logger.LogWarning(exception, "Failed to build Google Drive connect URL.");
+            _logger.LogWarning(exception, "Failed to build Dropbox connect URL.");
             return Result<CloudConnectUrlDto>.Failed(exception.Message);
         }
         catch (Exception exception)
         {
-            _logger.LogError(exception, "Unexpected error while building Google Drive connect URL.");
-            return Result<CloudConnectUrlDto>.Failed("ایجاد لینک اتصال گوگل درایو ناموفق بود.");
+            _logger.LogError(exception, "Unexpected error while building Dropbox connect URL.");
+            return Result<CloudConnectUrlDto>.Failed("ایجاد لینک اتصال دراپ‌باکس ناموفق بود.");
         }
     }
 
@@ -77,12 +77,12 @@ public sealed class GoogleDriveConnectionService : IGoogleDriveConnectionService
     {
         if (!string.IsNullOrWhiteSpace(error))
         {
-            return Result<ConnectedCloudAccountDto>.Failed("اتصال به گوگل درایو توسط کاربر لغو شد یا با خطا مواجه شد.");
+            return Result<ConnectedCloudAccountDto>.Failed("اتصال به دراپ‌باکس توسط کاربر لغو شد یا با خطا مواجه شد.");
         }
 
         if (string.IsNullOrWhiteSpace(code))
         {
-            return Result<ConnectedCloudAccountDto>.Failed("کد مجوز گوگل دریافت نشد.");
+            return Result<ConnectedCloudAccountDto>.Failed("کد مجوز دراپ‌باکس دریافت نشد.");
         }
 
         if (string.IsNullOrWhiteSpace(state))
@@ -98,12 +98,12 @@ public sealed class GoogleDriveConnectionService : IGoogleDriveConnectionService
 
         try
         {
-            var tokenResult = await _googleDriveProvider.ExchangeAuthorizationCodeAsync(code, cancellationToken);
-            var accountInfo = await _googleDriveProvider.GetAccountInfoAsync(tokenResult.AccessToken, cancellationToken);
+            var tokenResult = await _dropboxProvider.ExchangeAuthorizationCodeAsync(code, cancellationToken);
+            var accountInfo = await _dropboxProvider.GetAccountInfoAsync(tokenResult.AccessToken, cancellationToken);
 
             var existing = await _accountRepository.GetByUserIdAndProviderAccountIdAsync(
                 userId,
-                CloudProviderType.GoogleDrive,
+                CloudProviderType.Dropbox,
                 accountInfo.ProviderAccountId,
                 cancellationToken);
 
@@ -122,14 +122,15 @@ public sealed class GoogleDriveConnectionService : IGoogleDriveConnectionService
                 {
                     Id = Guid.NewGuid(),
                     UserId = userId,
-                    Provider = CloudProviderType.GoogleDrive,
+                    Provider = CloudProviderType.Dropbox,
                     AccountEmail = accountInfo.Email,
                     DisplayName = accountInfo.DisplayName,
                     ProviderAccountId = accountInfo.ProviderAccountId,
                     AccessToken = encryptedAccessToken,
                     RefreshToken = encryptedRefreshToken,
                     AccessTokenExpiresAtUtc = tokenResult.AccessTokenExpiresAtUtc,
-                    RootFolderId = "root",
+                    // Dropbox root is represented as an empty path.
+                    RootFolderId = string.Empty,
                     IsActive = true,
                     CreatedAtUtc = now,
                     UpdatedAtUtc = now,
@@ -150,7 +151,7 @@ public sealed class GoogleDriveConnectionService : IGoogleDriveConnectionService
                 }
 
                 account.AccessTokenExpiresAtUtc = tokenResult.AccessTokenExpiresAtUtc;
-                account.RootFolderId ??= "root";
+                account.RootFolderId ??= string.Empty;
                 account.IsActive = true;
                 account.UpdatedAtUtc = now;
                 account.LastSyncedAtUtc = now;
@@ -160,22 +161,22 @@ public sealed class GoogleDriveConnectionService : IGoogleDriveConnectionService
             await _accountRepository.SaveChangesAsync(cancellationToken);
 
             return Result<ConnectedCloudAccountDto>.Succeeded(
-                MapAccount(account, _googleDriveProvider.ProviderName),
-                "حساب گوگل درایو با موفقیت متصل شد.");
+                MapAccount(account, _dropboxProvider.ProviderName),
+                "حساب دراپ‌باکس با موفقیت متصل شد.");
         }
         catch (InvalidOperationException exception)
         {
-            _logger.LogWarning(exception, "Google Drive OAuth callback failed.");
+            _logger.LogWarning(exception, "Dropbox OAuth callback failed.");
             return Result<ConnectedCloudAccountDto>.Failed(exception.Message);
         }
         catch (Exception exception)
         {
-            _logger.LogError(exception, "Unexpected Google Drive OAuth callback failure.");
-            return Result<ConnectedCloudAccountDto>.Failed("اتصال حساب گوگل درایو ناموفق بود.");
+            _logger.LogError(exception, "Unexpected Dropbox OAuth callback failure.");
+            return Result<ConnectedCloudAccountDto>.Failed("اتصال حساب دراپ‌باکس ناموفق بود.");
         }
     }
 
-    internal static ConnectedCloudAccountDto MapAccount(ConnectedCloudAccount account, string providerName)
+    private static ConnectedCloudAccountDto MapAccount(ConnectedCloudAccount account, string providerName)
     {
         return new ConnectedCloudAccountDto
         {

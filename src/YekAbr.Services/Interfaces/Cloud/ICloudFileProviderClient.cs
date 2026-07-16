@@ -8,6 +8,10 @@ namespace YekAbr.Services.Interfaces.Cloud;
 /// </summary>
 public interface ICloudFileProviderClient : ICloudProviderClient
 {
+    Task<CloudStorageUsage> GetStorageUsageAsync(
+        string accessToken,
+        CancellationToken cancellationToken = default);
+
     Task<CloudItemListResult> ListItemsAsync(
         string accessToken,
         ListCloudItemsRequest request,

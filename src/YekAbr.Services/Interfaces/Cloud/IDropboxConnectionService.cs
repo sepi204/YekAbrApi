@@ -3,7 +3,7 @@ using YekAbr.Services.DTOs.Cloud;
 
 namespace YekAbr.Services.Interfaces.Cloud;
 
-public interface IGoogleDriveConnectionService
+public interface IDropboxConnectionService
 {
     Task<Result<CloudConnectUrlDto>> GetConnectUrlAsync(string userId, CancellationToken cancellationToken = default);
 

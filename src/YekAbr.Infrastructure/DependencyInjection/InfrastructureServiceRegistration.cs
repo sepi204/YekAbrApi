@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using YekAbr.Domain.Interfaces;
 using YekAbr.Infrastructure.Cloud;
+using YekAbr.Infrastructure.Cloud.Dropbox;
 using YekAbr.Infrastructure.Cloud.GoogleDrive;
 using YekAbr.Infrastructure.Identity;
 using YekAbr.Infrastructure.Persistence;
@@ -31,6 +32,7 @@ public static class InfrastructureServiceRegistration
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.Configure<CloudTokenEncryptionOptions>(configuration.GetSection(CloudTokenEncryptionOptions.SectionName));
         services.Configure<GoogleDriveOptions>(configuration.GetSection(GoogleDriveOptions.SectionName));
+        services.Configure<DropboxOptions>(configuration.GetSection(DropboxOptions.SectionName));
 
         services.AddDataProtection();
         services.AddMemoryCache();
@@ -89,9 +91,12 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<ICloudProviderClientFactory, CloudProviderClientFactory>();
 
         services.AddHttpClient<IGoogleDriveProviderClient, GoogleDriveProviderClient>();
+        services.AddHttpClient<IDropboxProviderClient, DropboxProviderClient>();
         services.AddScoped<ICloudProviderClient>(sp => sp.GetRequiredService<IGoogleDriveProviderClient>());
+        services.AddScoped<ICloudProviderClient>(sp => sp.GetRequiredService<IDropboxProviderClient>());
 
         services.AddScoped<IGoogleDriveConnectionService, GoogleDriveConnectionService>();
+        services.AddScoped<IDropboxConnectionService, DropboxConnectionService>();
         services.AddScoped<ICloudAccountService, CloudAccountService>();
         services.AddScoped<ICloudAccountCredentialService, CloudAccountCredentialService>();
         services.AddScoped<ICloudFileService, CloudFileService>();

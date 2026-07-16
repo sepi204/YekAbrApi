@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 using YekAbr.Api.Extensions;
 using YekAbr.Api.Models.Common;
+using YekAbr.Infrastructure.Cloud.Dropbox;
 using YekAbr.Infrastructure.Cloud.GoogleDrive;
+using YekAbr.Services.Common.Responses;
 using YekAbr.Services.DTOs.Cloud;
 using YekAbr.Services.Interfaces.Auth;
 using YekAbr.Services.Interfaces.Cloud;
@@ -16,31 +18,37 @@ namespace YekAbr.Api.Controllers;
 public sealed class CloudController : ControllerBase
 {
     private readonly IGoogleDriveConnectionService _googleDriveConnectionService;
+    private readonly IDropboxConnectionService _dropboxConnectionService;
     private readonly ICloudAccountService _cloudAccountService;
     private readonly ICloudFileService _cloudFileService;
     private readonly ICurrentUserService _currentUserService;
     private readonly GoogleDriveOptions _googleDriveOptions;
+    private readonly DropboxOptions _dropboxOptions;
 
     public CloudController(
         IGoogleDriveConnectionService googleDriveConnectionService,
+        IDropboxConnectionService dropboxConnectionService,
         ICloudAccountService cloudAccountService,
         ICloudFileService cloudFileService,
         ICurrentUserService currentUserService,
-        IOptions<GoogleDriveOptions> googleDriveOptions)
+        IOptions<GoogleDriveOptions> googleDriveOptions,
+        IOptions<DropboxOptions> dropboxOptions)
     {
         _googleDriveConnectionService = googleDriveConnectionService;
+        _dropboxConnectionService = dropboxConnectionService;
         _cloudAccountService = cloudAccountService;
         _cloudFileService = cloudFileService;
         _currentUserService = currentUserService;
         _googleDriveOptions = googleDriveOptions.Value;
+        _dropboxOptions = dropboxOptions.Value;
     }
 
     [Authorize]
     [HttpGet("google/connect-url")]
-    [ProducesResponseType(typeof(ApiResponse<GoogleConnectUrlDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<GoogleConnectUrlDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<CloudConnectUrlDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<CloudConnectUrlDto>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<ActionResult<ApiResponse<GoogleConnectUrlDto>>> GetGoogleConnectUrl(CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<CloudConnectUrlDto>>> GetGoogleConnectUrl(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_currentUserService.UserId))
         {
@@ -65,46 +73,46 @@ public sealed class CloudController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await _googleDriveConnectionService.HandleCallbackAsync(code, state, error, cancellationToken);
+        return HandleOAuthCallbackResult(
+            result,
+            _googleDriveOptions.FrontendSuccessRedirectUrl,
+            _googleDriveOptions.FrontendFailureRedirectUrl);
+    }
 
-        if (!string.IsNullOrWhiteSpace(_googleDriveOptions.FrontendSuccessRedirectUrl)
-            || !string.IsNullOrWhiteSpace(_googleDriveOptions.FrontendFailureRedirectUrl))
+    [Authorize]
+    [HttpGet("dropbox/connect-url")]
+    [ProducesResponseType(typeof(ApiResponse<CloudConnectUrlDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<CloudConnectUrlDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ApiResponse<CloudConnectUrlDto>>> GetDropboxConnectUrl(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId))
         {
-            if (result.Success
-                && result.Data is not null
-                && !string.IsNullOrWhiteSpace(_googleDriveOptions.FrontendSuccessRedirectUrl))
-            {
-                var successUrl = QueryHelpers.AddQueryString(
-                    _googleDriveOptions.FrontendSuccessRedirectUrl,
-                    new Dictionary<string, string?>
-                    {
-                        ["connected"] = "true",
-                        ["accountId"] = result.Data.Id.ToString(),
-                        ["provider"] = result.Data.Provider.ToString()
-                    });
-
-                return Redirect(successUrl);
-            }
-
-            if (!string.IsNullOrWhiteSpace(_googleDriveOptions.FrontendFailureRedirectUrl))
-            {
-                var failureUrl = QueryHelpers.AddQueryString(
-                    _googleDriveOptions.FrontendFailureRedirectUrl,
-                    new Dictionary<string, string?>
-                    {
-                        ["connected"] = "false",
-                        ["message"] = result.Message
-                    });
-
-                return Redirect(failureUrl);
-            }
+            return Unauthorized();
         }
 
-        if (result.Success)
-        {
-            return Ok(ApiResponse<ConnectedCloudAccountDto>.FromResult(true, result.Message, result.Data));
-        }
+        var result = await _dropboxConnectionService.GetConnectUrlAsync(_currentUserService.UserId, cancellationToken);
+        return this.ToApiResponse(result);
+    }
 
-        return BadRequest(ApiResponse<ConnectedCloudAccountDto>.FromResult(false, result.Message, errors: result.Errors));
+    /// <summary>
+    /// Dropbox OAuth callback. Validates state, then redirects to configured frontend URLs when present.
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("dropbox/callback")]
+    [ProducesResponseType(typeof(ApiResponse<ConnectedCloudAccountDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<ConnectedCloudAccountDto>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> DropboxCallback(
+        [FromQuery] string? code,
+        [FromQuery] string? state,
+        [FromQuery] string? error,
+        CancellationToken cancellationToken)
+    {
+        var result = await _dropboxConnectionService.HandleCallbackAsync(code, state, error, cancellationToken);
+        return HandleOAuthCallbackResult(
+            result,
+            _dropboxOptions.FrontendSuccessRedirectUrl,
+            _dropboxOptions.FrontendFailureRedirectUrl);
     }
 
     [Authorize]
@@ -351,5 +359,50 @@ public sealed class CloudController : ControllerBase
 
         var result = await _cloudFileService.RenameItemAsync(_currentUserService.UserId, id, itemId, request, cancellationToken);
         return this.ToApiResponse(result);
+    }
+
+    private IActionResult HandleOAuthCallbackResult(
+        Result<ConnectedCloudAccountDto> result,
+        string? successRedirectUrl,
+        string? failureRedirectUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(successRedirectUrl) || !string.IsNullOrWhiteSpace(failureRedirectUrl))
+        {
+            if (result.Success
+                && result.Data is not null
+                && !string.IsNullOrWhiteSpace(successRedirectUrl))
+            {
+                var successUrl = QueryHelpers.AddQueryString(
+                    successRedirectUrl,
+                    new Dictionary<string, string?>
+                    {
+                        ["connected"] = "true",
+                        ["accountId"] = result.Data.Id.ToString(),
+                        ["provider"] = result.Data.Provider.ToString()
+                    });
+
+                return Redirect(successUrl);
+            }
+
+            if (!string.IsNullOrWhiteSpace(failureRedirectUrl))
+            {
+                var failureUrl = QueryHelpers.AddQueryString(
+                    failureRedirectUrl,
+                    new Dictionary<string, string?>
+                    {
+                        ["connected"] = "false",
+                        ["message"] = result.Message
+                    });
+
+                return Redirect(failureUrl);
+            }
+        }
+
+        if (result.Success)
+        {
+            return Ok(ApiResponse<ConnectedCloudAccountDto>.FromResult(true, result.Message, result.Data));
+        }
+
+        return BadRequest(ApiResponse<ConnectedCloudAccountDto>.FromResult(false, result.Message, errors: result.Errors));
     }
 }

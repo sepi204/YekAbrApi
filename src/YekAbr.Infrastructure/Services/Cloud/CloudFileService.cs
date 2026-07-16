@@ -1,6 +1,5 @@
 using FluentValidation;
 using Microsoft.Extensions.Logging;
-using YekAbr.Domain.Enums;
 using YekAbr.Services.Common.Responses;
 using YekAbr.Services.DTOs.Cloud;
 using YekAbr.Services.Interfaces.Cloud;
@@ -11,7 +10,7 @@ namespace YekAbr.Infrastructure.Services.Cloud;
 public sealed class CloudFileService : ICloudFileService
 {
     private readonly ICloudAccountCredentialService _credentialService;
-    private readonly IGoogleDriveProviderClient _googleDriveProvider;
+    private readonly ICloudProviderClientFactory _providerFactory;
     private readonly IValidator<ListCloudItemsRequest> _listValidator;
     private readonly IValidator<CreateCloudFolderRequest> _createFolderValidator;
     private readonly IValidator<MoveCloudItemRequest> _moveValidator;
@@ -20,7 +19,7 @@ public sealed class CloudFileService : ICloudFileService
 
     public CloudFileService(
         ICloudAccountCredentialService credentialService,
-        IGoogleDriveProviderClient googleDriveProvider,
+        ICloudProviderClientFactory providerFactory,
         IValidator<ListCloudItemsRequest> listValidator,
         IValidator<CreateCloudFolderRequest> createFolderValidator,
         IValidator<MoveCloudItemRequest> moveValidator,
@@ -28,7 +27,7 @@ public sealed class CloudFileService : ICloudFileService
         ILogger<CloudFileService> logger)
     {
         _credentialService = credentialService;
-        _googleDriveProvider = googleDriveProvider;
+        _providerFactory = providerFactory;
         _listValidator = listValidator;
         _createFolderValidator = createFolderValidator;
         _moveValidator = moveValidator;
@@ -48,7 +47,7 @@ public sealed class CloudFileService : ICloudFileService
             return Result<CloudItemListDto>.Failed("اعتبارسنجی ناموفق بود.", validationErrors);
         }
 
-        var access = await ResolveGoogleAccessAsync(userId, accountId, cancellationToken);
+        var access = await ResolveAccessAsync(userId, accountId, cancellationToken);
         if (!access.Success)
         {
             return Result<CloudItemListDto>.Failed(access.ErrorMessage!);
@@ -57,7 +56,7 @@ public sealed class CloudFileService : ICloudFileService
         try
         {
             request.ParentId = NormalizeParentId(request.ParentId, access.Account!.RootFolderId);
-            var list = await _googleDriveProvider.ListItemsAsync(access.AccessToken!, request, cancellationToken);
+            var list = await access.FileProvider!.ListItemsAsync(access.AccessToken!, request, cancellationToken);
 
             return Result<CloudItemListDto>.Succeeded(
                 new CloudItemListDto
@@ -90,7 +89,7 @@ public sealed class CloudFileService : ICloudFileService
             return Result<CloudItemDto>.Failed("شناسه آیتم الزامی است.");
         }
 
-        var access = await ResolveGoogleAccessAsync(userId, accountId, cancellationToken);
+        var access = await ResolveAccessAsync(userId, accountId, cancellationToken);
         if (!access.Success)
         {
             return Result<CloudItemDto>.Failed(access.ErrorMessage!);
@@ -98,7 +97,7 @@ public sealed class CloudFileService : ICloudFileService
 
         try
         {
-            var item = await _googleDriveProvider.GetItemAsync(access.AccessToken!, itemId, cancellationToken);
+            var item = await access.FileProvider!.GetItemAsync(access.AccessToken!, itemId, cancellationToken);
             return Result<CloudItemDto>.Succeeded(CloudItemDto.FromDomain(item), "جزئیات آیتم با موفقیت دریافت شد.");
         }
         catch (InvalidOperationException exception)
@@ -134,7 +133,7 @@ public sealed class CloudFileService : ICloudFileService
             return Result<CloudItemDto>.Failed("آپلود فایل خالی مجاز نیست.");
         }
 
-        var access = await ResolveGoogleAccessAsync(userId, accountId, cancellationToken);
+        var access = await ResolveAccessAsync(userId, accountId, cancellationToken);
         if (!access.Success)
         {
             return Result<CloudItemDto>.Failed(access.ErrorMessage!);
@@ -143,7 +142,7 @@ public sealed class CloudFileService : ICloudFileService
         try
         {
             request.ParentFolderId = NormalizeParentId(request.ParentFolderId, access.Account!.RootFolderId);
-            var uploaded = await _googleDriveProvider.UploadFileAsync(access.AccessToken!, request, cancellationToken);
+            var uploaded = await access.FileProvider!.UploadFileAsync(access.AccessToken!, request, cancellationToken);
             return Result<CloudItemDto>.Succeeded(CloudItemDto.FromDomain(uploaded), "فایل با موفقیت آپلود شد.");
         }
         catch (InvalidOperationException exception)
@@ -169,7 +168,7 @@ public sealed class CloudFileService : ICloudFileService
             return Result<CloudDownloadResult>.Failed("شناسه فایل الزامی است.");
         }
 
-        var access = await ResolveGoogleAccessAsync(userId, accountId, cancellationToken);
+        var access = await ResolveAccessAsync(userId, accountId, cancellationToken);
         if (!access.Success)
         {
             return Result<CloudDownloadResult>.Failed(access.ErrorMessage!);
@@ -177,7 +176,7 @@ public sealed class CloudFileService : ICloudFileService
 
         try
         {
-            var download = await _googleDriveProvider.DownloadFileAsync(access.AccessToken!, itemId, cancellationToken);
+            var download = await access.FileProvider!.DownloadFileAsync(access.AccessToken!, itemId, cancellationToken);
             return Result<CloudDownloadResult>.Succeeded(download, "دانلود فایل آماده است.");
         }
         catch (InvalidOperationException exception)
@@ -203,7 +202,7 @@ public sealed class CloudFileService : ICloudFileService
             return Result<object>.Failed("شناسه آیتم الزامی است.");
         }
 
-        var access = await ResolveGoogleAccessAsync(userId, accountId, cancellationToken);
+        var access = await ResolveAccessAsync(userId, accountId, cancellationToken);
         if (!access.Success)
         {
             return Result<object>.Failed(access.ErrorMessage!);
@@ -211,8 +210,8 @@ public sealed class CloudFileService : ICloudFileService
 
         try
         {
-            await _googleDriveProvider.DeleteItemAsync(access.AccessToken!, itemId, cancellationToken);
-            return Result<object>.Succeeded(new { }, "آیتم با موفقیت به سطل زباله منتقل شد.");
+            await access.FileProvider!.DeleteItemAsync(access.AccessToken!, itemId, cancellationToken);
+            return Result<object>.Succeeded(new { }, "آیتم با موفقیت حذف شد.");
         }
         catch (InvalidOperationException exception)
         {
@@ -238,7 +237,7 @@ public sealed class CloudFileService : ICloudFileService
             return Result<CloudItemDto>.Failed("اعتبارسنجی ناموفق بود.", validationErrors);
         }
 
-        var access = await ResolveGoogleAccessAsync(userId, accountId, cancellationToken);
+        var access = await ResolveAccessAsync(userId, accountId, cancellationToken);
         if (!access.Success)
         {
             return Result<CloudItemDto>.Failed(access.ErrorMessage!);
@@ -247,7 +246,7 @@ public sealed class CloudFileService : ICloudFileService
         try
         {
             request.ParentFolderId = NormalizeParentId(request.ParentFolderId, access.Account!.RootFolderId);
-            var folder = await _googleDriveProvider.CreateFolderAsync(access.AccessToken!, request, cancellationToken);
+            var folder = await access.FileProvider!.CreateFolderAsync(access.AccessToken!, request, cancellationToken);
             return Result<CloudItemDto>.Succeeded(CloudItemDto.FromDomain(folder), "پوشه با موفقیت ایجاد شد.");
         }
         catch (InvalidOperationException exception)
@@ -285,7 +284,7 @@ public sealed class CloudFileService : ICloudFileService
             return Result<CloudItemDto>.Failed("انتقال یک پوشه به داخل خودش مجاز نیست.");
         }
 
-        var access = await ResolveGoogleAccessAsync(userId, accountId, cancellationToken);
+        var access = await ResolveAccessAsync(userId, accountId, cancellationToken);
         if (!access.Success)
         {
             return Result<CloudItemDto>.Failed(access.ErrorMessage!);
@@ -293,8 +292,8 @@ public sealed class CloudFileService : ICloudFileService
 
         try
         {
-            var destination = NormalizeParentId(request.DestinationParentFolderId, access.Account!.RootFolderId)!;
-            var moved = await _googleDriveProvider.MoveItemAsync(access.AccessToken!, itemId, destination, cancellationToken);
+            var destination = NormalizeParentId(request.DestinationParentFolderId, access.Account!.RootFolderId);
+            var moved = await access.FileProvider!.MoveItemAsync(access.AccessToken!, itemId, destination, cancellationToken);
             return Result<CloudItemDto>.Succeeded(CloudItemDto.FromDomain(moved), "آیتم با موفقیت منتقل شد.");
         }
         catch (InvalidOperationException exception)
@@ -327,7 +326,7 @@ public sealed class CloudFileService : ICloudFileService
             return Result<CloudItemDto>.Failed("اعتبارسنجی ناموفق بود.", validationErrors);
         }
 
-        var access = await ResolveGoogleAccessAsync(userId, accountId, cancellationToken);
+        var access = await ResolveAccessAsync(userId, accountId, cancellationToken);
         if (!access.Success)
         {
             return Result<CloudItemDto>.Failed(access.ErrorMessage!);
@@ -335,7 +334,7 @@ public sealed class CloudFileService : ICloudFileService
 
         try
         {
-            var renamed = await _googleDriveProvider.RenameItemAsync(access.AccessToken!, itemId, request.NewName.Trim(), cancellationToken);
+            var renamed = await access.FileProvider!.RenameItemAsync(access.AccessToken!, itemId, request.NewName.Trim(), cancellationToken);
             return Result<CloudItemDto>.Succeeded(CloudItemDto.FromDomain(renamed), "نام آیتم با موفقیت تغییر کرد.");
         }
         catch (InvalidOperationException exception)
@@ -350,7 +349,7 @@ public sealed class CloudFileService : ICloudFileService
         }
     }
 
-    private async Task<AccessContext> ResolveGoogleAccessAsync(
+    private async Task<AccessContext> ResolveAccessAsync(
         string userId,
         Guid accountId,
         CancellationToken cancellationToken)
@@ -366,15 +365,16 @@ public sealed class CloudFileService : ICloudFileService
             return AccessContext.Fail("حساب ابری مورد نظر یافت نشد.");
         }
 
-        if (account.Provider != CloudProviderType.GoogleDrive)
+        if (!_providerFactory.IsSupported(account.Provider))
         {
             return AccessContext.Fail("عملیات فایل برای این ارائه‌دهنده هنوز پشتیبانی نمی‌شود.");
         }
 
         try
         {
+            var fileProvider = _providerFactory.GetFileProvider(account.Provider);
             var accessToken = await _credentialService.GetValidAccessTokenAsync(account, cancellationToken);
-            return AccessContext.Ok(account, accessToken);
+            return AccessContext.Ok(account, accessToken, fileProvider);
         }
         catch (InvalidOperationException exception)
         {
@@ -384,12 +384,14 @@ public sealed class CloudFileService : ICloudFileService
 
     private static string NormalizeParentId(string? parentId, string? rootFolderId)
     {
-        if (string.IsNullOrWhiteSpace(parentId))
+        if (!string.IsNullOrWhiteSpace(parentId))
         {
-            return string.IsNullOrWhiteSpace(rootFolderId) ? "root" : rootFolderId;
+            return parentId;
         }
 
-        return parentId;
+        // Provider-specific root identifiers are stored on ConnectedCloudAccount.RootFolderId
+        // (e.g. Google "root", Dropbox "").
+        return rootFolderId ?? string.Empty;
     }
 
     private sealed class AccessContext
@@ -398,12 +400,17 @@ public sealed class CloudFileService : ICloudFileService
         public string? ErrorMessage { get; private init; }
         public Domain.Entities.ConnectedCloudAccount? Account { get; private init; }
         public string? AccessToken { get; private init; }
+        public ICloudFileProviderClient? FileProvider { get; private init; }
 
-        public static AccessContext Ok(Domain.Entities.ConnectedCloudAccount account, string accessToken) => new()
+        public static AccessContext Ok(
+            Domain.Entities.ConnectedCloudAccount account,
+            string accessToken,
+            ICloudFileProviderClient fileProvider) => new()
         {
             Success = true,
             Account = account,
-            AccessToken = accessToken
+            AccessToken = accessToken,
+            FileProvider = fileProvider
         };
 
         public static AccessContext Fail(string message) => new()

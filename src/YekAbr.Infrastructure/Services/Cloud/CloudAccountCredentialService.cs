@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using YekAbr.Domain.Entities;
-using YekAbr.Domain.Enums;
 using YekAbr.Domain.Interfaces;
 using YekAbr.Services.Interfaces.Cloud;
 
@@ -11,18 +10,18 @@ public sealed class CloudAccountCredentialService : ICloudAccountCredentialServi
     private static readonly TimeSpan TokenRefreshSkew = TimeSpan.FromMinutes(2);
 
     private readonly IConnectedCloudAccountRepository _accountRepository;
-    private readonly IGoogleDriveProviderClient _googleDriveProvider;
+    private readonly ICloudProviderClientFactory _providerFactory;
     private readonly ICloudTokenEncryptionService _tokenEncryptionService;
     private readonly ILogger<CloudAccountCredentialService> _logger;
 
     public CloudAccountCredentialService(
         IConnectedCloudAccountRepository accountRepository,
-        IGoogleDriveProviderClient googleDriveProvider,
+        ICloudProviderClientFactory providerFactory,
         ICloudTokenEncryptionService tokenEncryptionService,
         ILogger<CloudAccountCredentialService> logger)
     {
         _accountRepository = accountRepository;
-        _googleDriveProvider = googleDriveProvider;
+        _providerFactory = providerFactory;
         _tokenEncryptionService = tokenEncryptionService;
         _logger = logger;
     }
@@ -45,21 +44,17 @@ public sealed class CloudAccountCredentialService : ICloudAccountCredentialServi
         ConnectedCloudAccount account,
         CancellationToken cancellationToken = default)
     {
-        if (account.Provider != CloudProviderType.GoogleDrive)
+        if (string.IsNullOrWhiteSpace(account.AccessToken))
         {
-            throw new InvalidOperationException("تازه‌سازی توکن برای این ارائه‌دهنده هنوز پشتیبانی نمی‌شود.");
+            throw new InvalidOperationException("توکن دسترسی حساب ابری موجود نیست. لطفاً دوباره متصل شوید.");
         }
 
-        var needsRefresh = !account.AccessTokenExpiresAtUtc.HasValue
-            || account.AccessTokenExpiresAtUtc.Value <= DateTime.UtcNow.Add(TokenRefreshSkew);
+        // Only refresh when an expiry is known and the token is near expiration.
+        var needsRefresh = account.AccessTokenExpiresAtUtc.HasValue
+            && account.AccessTokenExpiresAtUtc.Value <= DateTime.UtcNow.Add(TokenRefreshSkew);
 
         if (!needsRefresh)
         {
-            if (string.IsNullOrWhiteSpace(account.AccessToken))
-            {
-                throw new InvalidOperationException("توکن دسترسی حساب ابری موجود نیست. لطفاً دوباره متصل شوید.");
-            }
-
             return _tokenEncryptionService.Decrypt(account.AccessToken);
         }
 
@@ -68,10 +63,19 @@ public sealed class CloudAccountCredentialService : ICloudAccountCredentialServi
             throw new InvalidOperationException("توکن دسترسی منقضی شده و توکن تازه‌سازی موجود نیست. لطفاً دوباره متصل شوید.");
         }
 
-        _logger.LogInformation("Refreshing Google Drive access token for account {AccountId}.", account.Id);
+        var provider = _providerFactory.GetProvider(account.Provider);
+        if (provider is not ICloudTokenRefreshProvider refreshProvider)
+        {
+            throw new InvalidOperationException("تازه‌سازی توکن برای این ارائه‌دهنده پشتیبانی نمی‌شود. لطفاً دوباره متصل شوید.");
+        }
+
+        _logger.LogInformation(
+            "Refreshing access token for provider {Provider} account {AccountId}.",
+            account.Provider,
+            account.Id);
 
         var refreshToken = _tokenEncryptionService.Decrypt(account.RefreshToken);
-        var refreshed = await _googleDriveProvider.RefreshAccessTokenAsync(refreshToken, cancellationToken);
+        var refreshed = await refreshProvider.RefreshAccessTokenAsync(refreshToken, cancellationToken);
 
         account.AccessToken = _tokenEncryptionService.Encrypt(refreshed.AccessToken);
         account.AccessTokenExpiresAtUtc = refreshed.AccessTokenExpiresAtUtc;
