@@ -17,17 +17,20 @@ public sealed class CloudController : ControllerBase
 {
     private readonly IGoogleDriveConnectionService _googleDriveConnectionService;
     private readonly ICloudAccountService _cloudAccountService;
+    private readonly ICloudFileService _cloudFileService;
     private readonly ICurrentUserService _currentUserService;
     private readonly GoogleDriveOptions _googleDriveOptions;
 
     public CloudController(
         IGoogleDriveConnectionService googleDriveConnectionService,
         ICloudAccountService cloudAccountService,
+        ICloudFileService cloudFileService,
         ICurrentUserService currentUserService,
         IOptions<GoogleDriveOptions> googleDriveOptions)
     {
         _googleDriveConnectionService = googleDriveConnectionService;
         _cloudAccountService = cloudAccountService;
+        _cloudFileService = cloudFileService;
         _currentUserService = currentUserService;
         _googleDriveOptions = googleDriveOptions.Value;
     }
@@ -154,6 +157,199 @@ public sealed class CloudController : ControllerBase
         }
 
         var result = await _cloudAccountService.GetUsageAsync(_currentUserService.UserId, id, cancellationToken);
+        return this.ToApiResponse(result);
+    }
+
+    [Authorize]
+    [HttpGet("accounts/{id:guid}/items")]
+    [ProducesResponseType(typeof(ApiResponse<CloudItemListDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<CloudItemListDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ApiResponse<CloudItemListDto>>> ListItems(
+        Guid id,
+        [FromQuery] string? parentId,
+        [FromQuery] int pageSize = 50,
+        [FromQuery] string? pageToken = null,
+        [FromQuery] string? search = null,
+        [FromQuery] bool includeFolders = true,
+        [FromQuery] bool includeFiles = true,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId))
+        {
+            return Unauthorized();
+        }
+
+        var request = new ListCloudItemsRequest
+        {
+            ParentId = parentId,
+            PageSize = pageSize,
+            PageToken = pageToken,
+            Search = search,
+            IncludeFolders = includeFolders,
+            IncludeFiles = includeFiles
+        };
+
+        var result = await _cloudFileService.ListItemsAsync(_currentUserService.UserId, id, request, cancellationToken);
+        return this.ToApiResponse(result);
+    }
+
+    [Authorize]
+    [HttpGet("accounts/{id:guid}/items/{itemId}")]
+    [ProducesResponseType(typeof(ApiResponse<CloudItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<CloudItemDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ApiResponse<CloudItemDto>>> GetItem(
+        Guid id,
+        string itemId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId))
+        {
+            return Unauthorized();
+        }
+
+        var result = await _cloudFileService.GetItemAsync(_currentUserService.UserId, id, itemId, cancellationToken);
+        return this.ToApiResponse(result);
+    }
+
+    [Authorize]
+    [HttpPost("accounts/{id:guid}/files/upload")]
+    [RequestSizeLimit(100_000_000)]
+    [ProducesResponseType(typeof(ApiResponse<CloudItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<CloudItemDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ApiResponse<CloudItemDto>>> UploadFile(
+        Guid id,
+        IFormFile file,
+        [FromForm] string? parentFolderId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId))
+        {
+            return Unauthorized();
+        }
+
+        if (file is null || file.Length <= 0)
+        {
+            return BadRequest(ApiResponse<CloudItemDto>.FromResult(false, "فایل برای آپلود الزامی است."));
+        }
+
+        await using var stream = file.OpenReadStream();
+        var request = new UploadCloudFileRequest
+        {
+            Content = stream,
+            FileName = file.FileName,
+            ContentType = file.ContentType,
+            ParentFolderId = parentFolderId,
+            ContentLength = file.Length
+        };
+
+        var result = await _cloudFileService.UploadFileAsync(_currentUserService.UserId, id, request, cancellationToken);
+        return this.ToApiResponse(result);
+    }
+
+    [Authorize]
+    [HttpGet("accounts/{id:guid}/files/{itemId}/download")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> DownloadFile(
+        Guid id,
+        string itemId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId))
+        {
+            return Unauthorized();
+        }
+
+        var result = await _cloudFileService.DownloadFileAsync(_currentUserService.UserId, id, itemId, cancellationToken);
+        if (!result.Success || result.Data is null)
+        {
+            return BadRequest(ApiResponse<object>.FromResult(false, result.Message, errors: result.Errors));
+        }
+
+        var download = result.Data;
+        HttpContext.Response.RegisterForDispose(download);
+        return File(download.Content, download.ContentType, download.FileName);
+    }
+
+    [Authorize]
+    [HttpDelete("accounts/{id:guid}/items/{itemId}")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ApiResponse<object>>> DeleteItem(
+        Guid id,
+        string itemId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId))
+        {
+            return Unauthorized();
+        }
+
+        var result = await _cloudFileService.DeleteItemAsync(_currentUserService.UserId, id, itemId, cancellationToken);
+        return this.ToApiResponse(result);
+    }
+
+    [Authorize]
+    [HttpPost("accounts/{id:guid}/folders")]
+    [ProducesResponseType(typeof(ApiResponse<CloudItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<CloudItemDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ApiResponse<CloudItemDto>>> CreateFolder(
+        Guid id,
+        [FromBody] CreateCloudFolderRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId))
+        {
+            return Unauthorized();
+        }
+
+        var result = await _cloudFileService.CreateFolderAsync(_currentUserService.UserId, id, request, cancellationToken);
+        return this.ToApiResponse(result);
+    }
+
+    [Authorize]
+    [HttpPost("accounts/{id:guid}/items/{itemId}/move")]
+    [ProducesResponseType(typeof(ApiResponse<CloudItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<CloudItemDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ApiResponse<CloudItemDto>>> MoveItem(
+        Guid id,
+        string itemId,
+        [FromBody] MoveCloudItemRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId))
+        {
+            return Unauthorized();
+        }
+
+        var result = await _cloudFileService.MoveItemAsync(_currentUserService.UserId, id, itemId, request, cancellationToken);
+        return this.ToApiResponse(result);
+    }
+
+    [Authorize]
+    [HttpPatch("accounts/{id:guid}/items/{itemId}/rename")]
+    [ProducesResponseType(typeof(ApiResponse<CloudItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<CloudItemDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ApiResponse<CloudItemDto>>> RenameItem(
+        Guid id,
+        string itemId,
+        [FromBody] RenameCloudItemRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId))
+        {
+            return Unauthorized();
+        }
+
+        var result = await _cloudFileService.RenameItemAsync(_currentUserService.UserId, id, itemId, request, cancellationToken);
         return this.ToApiResponse(result);
     }
 }

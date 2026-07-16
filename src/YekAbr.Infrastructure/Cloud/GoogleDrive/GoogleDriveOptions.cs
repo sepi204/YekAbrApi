@@ -11,6 +11,8 @@ public sealed class GoogleDriveOptions
     public string TokenEndpoint { get; set; } = "https://oauth2.googleapis.com/token";
     public string UserInfoEndpoint { get; set; } = "https://www.googleapis.com/oauth2/v3/userinfo";
     public string DriveAboutEndpoint { get; set; } = "https://www.googleapis.com/drive/v3/about";
+    public string FilesEndpoint { get; set; } = "https://www.googleapis.com/drive/v3/files";
+    public string UploadEndpoint { get; set; } = "https://www.googleapis.com/upload/drive/v3/files";
 
     /// <summary>
     /// Includes identity scopes plus full Drive access for future file-management phases.

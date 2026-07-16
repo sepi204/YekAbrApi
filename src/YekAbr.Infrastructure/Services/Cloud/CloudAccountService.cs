@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using YekAbr.Domain.Entities;
 using YekAbr.Domain.Enums;
 using YekAbr.Domain.Interfaces;
 using YekAbr.Services.Common.Responses;
@@ -10,25 +9,23 @@ namespace YekAbr.Infrastructure.Services.Cloud;
 
 public sealed class CloudAccountService : ICloudAccountService
 {
-    private static readonly TimeSpan TokenRefreshSkew = TimeSpan.FromMinutes(2);
-
     private readonly IConnectedCloudAccountRepository _accountRepository;
     private readonly ICloudProviderClientFactory _providerFactory;
     private readonly IGoogleDriveProviderClient _googleDriveProvider;
-    private readonly ICloudTokenEncryptionService _tokenEncryptionService;
+    private readonly ICloudAccountCredentialService _credentialService;
     private readonly ILogger<CloudAccountService> _logger;
 
     public CloudAccountService(
         IConnectedCloudAccountRepository accountRepository,
         ICloudProviderClientFactory providerFactory,
         IGoogleDriveProviderClient googleDriveProvider,
-        ICloudTokenEncryptionService tokenEncryptionService,
+        ICloudAccountCredentialService credentialService,
         ILogger<CloudAccountService> logger)
     {
         _accountRepository = accountRepository;
         _providerFactory = providerFactory;
         _googleDriveProvider = googleDriveProvider;
-        _tokenEncryptionService = tokenEncryptionService;
+        _credentialService = credentialService;
         _logger = logger;
     }
 
@@ -95,8 +92,8 @@ public sealed class CloudAccountService : ICloudAccountService
             return Result<CloudStorageUsageDto>.Failed("کاربر احراز هویت نشده است.");
         }
 
-        var account = await _accountRepository.GetByIdAsync(accountId, cancellationToken);
-        if (account is null || account.UserId != userId || !account.IsActive)
+        var account = await _credentialService.GetOwnedActiveAccountAsync(userId, accountId, cancellationToken);
+        if (account is null)
         {
             return Result<CloudStorageUsageDto>.Failed("حساب ابری مورد نظر یافت نشد.");
         }
@@ -108,7 +105,7 @@ public sealed class CloudAccountService : ICloudAccountService
 
         try
         {
-            var accessToken = await EnsureValidAccessTokenAsync(account, cancellationToken);
+            var accessToken = await _credentialService.GetValidAccessTokenAsync(account, cancellationToken);
             var usage = await _googleDriveProvider.GetStorageUsageAsync(accessToken, cancellationToken);
 
             account.LastSyncedAtUtc = DateTime.UtcNow;
@@ -137,41 +134,7 @@ public sealed class CloudAccountService : ICloudAccountService
         }
     }
 
-    private async Task<string> EnsureValidAccessTokenAsync(
-        ConnectedCloudAccount account,
-        CancellationToken cancellationToken)
-    {
-        var needsRefresh = !account.AccessTokenExpiresAtUtc.HasValue
-            || account.AccessTokenExpiresAtUtc.Value <= DateTime.UtcNow.Add(TokenRefreshSkew);
-
-        if (!needsRefresh)
-        {
-            return _tokenEncryptionService.Decrypt(account.AccessToken);
-        }
-
-        if (string.IsNullOrWhiteSpace(account.RefreshToken))
-        {
-            throw new InvalidOperationException("توکن دسترسی منقضی شده و توکن تازه‌سازی موجود نیست. لطفاً دوباره متصل شوید.");
-        }
-
-        var refreshToken = _tokenEncryptionService.Decrypt(account.RefreshToken);
-        var refreshed = await _googleDriveProvider.RefreshAccessTokenAsync(refreshToken, cancellationToken);
-
-        account.AccessToken = _tokenEncryptionService.Encrypt(refreshed.AccessToken);
-        account.AccessTokenExpiresAtUtc = refreshed.AccessTokenExpiresAtUtc;
-        if (!string.IsNullOrWhiteSpace(refreshed.RefreshToken))
-        {
-            account.RefreshToken = _tokenEncryptionService.Encrypt(refreshed.RefreshToken);
-        }
-
-        account.UpdatedAtUtc = DateTime.UtcNow;
-        _accountRepository.Update(account);
-        await _accountRepository.SaveChangesAsync(cancellationToken);
-
-        return refreshed.AccessToken;
-    }
-
-    private ConnectedCloudAccountDto MapAccount(ConnectedCloudAccount account)
+    private ConnectedCloudAccountDto MapAccount(Domain.Entities.ConnectedCloudAccount account)
     {
         var providerName = _providerFactory.IsSupported(account.Provider)
             ? _providerFactory.GetProvider(account.Provider).ProviderName

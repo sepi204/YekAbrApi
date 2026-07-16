@@ -10,7 +10,7 @@ using YekAbr.Services.Interfaces.Cloud;
 
 namespace YekAbr.Infrastructure.Cloud.GoogleDrive;
 
-public sealed class GoogleDriveProviderClient : CloudProviderClientBase, IGoogleDriveProviderClient
+public sealed partial class GoogleDriveProviderClient : CloudProviderClientBase, IGoogleDriveProviderClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

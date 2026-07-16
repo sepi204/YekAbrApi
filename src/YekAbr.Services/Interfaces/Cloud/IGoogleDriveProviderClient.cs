@@ -1,13 +1,12 @@
 using YekAbr.Domain.Models;
 using YekAbr.Services.DTOs.Cloud;
-using YekAbr.Services.Interfaces.Cloud;
 
 namespace YekAbr.Services.Interfaces.Cloud;
 
 /// <summary>
-/// Google Drive-specific operations required for account connection and usage.
+/// Google Drive provider: OAuth + file operations.
 /// </summary>
-public interface IGoogleDriveProviderClient : ICloudProviderClient
+public interface IGoogleDriveProviderClient : ICloudFileProviderClient
 {
     string BuildAuthorizationUrl(string state);
 

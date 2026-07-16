@@ -9,7 +9,12 @@ public sealed class CloudItem
 {
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
-    public string FullPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional display path. Many providers are ID-based; this may be null.
+    /// </summary>
+    public string? FullPath { get; set; }
+
     public CloudItemType ItemType { get; set; }
     public long? Size { get; set; }
     public string? MimeType { get; set; }

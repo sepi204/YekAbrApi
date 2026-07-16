@@ -16,9 +16,11 @@ using YekAbr.Infrastructure.Security;
 using YekAbr.Infrastructure.Services.Auth;
 using YekAbr.Infrastructure.Services.Cloud;
 using YekAbr.Services.DTOs.Auth;
+using YekAbr.Services.DTOs.Cloud;
 using YekAbr.Services.Interfaces.Auth;
 using YekAbr.Services.Interfaces.Cloud;
 using YekAbr.Services.Validators.Auth;
+using YekAbr.Services.Validators.Cloud;
 
 namespace YekAbr.Infrastructure.DependencyInjection;
 
@@ -91,11 +93,17 @@ public static class InfrastructureServiceRegistration
 
         services.AddScoped<IGoogleDriveConnectionService, GoogleDriveConnectionService>();
         services.AddScoped<ICloudAccountService, CloudAccountService>();
+        services.AddScoped<ICloudAccountCredentialService, CloudAccountCredentialService>();
+        services.AddScoped<ICloudFileService, CloudFileService>();
 
         services.AddScoped<IValidator<RegisterRequest>, RegisterRequestValidator>();
         services.AddScoped<IValidator<LoginRequest>, LoginRequestValidator>();
         services.AddScoped<IValidator<RefreshTokenRequest>, RefreshTokenRequestValidator>();
         services.AddScoped<IValidator<LogoutRequest>, LogoutRequestValidator>();
+        services.AddScoped<IValidator<ListCloudItemsRequest>, ListCloudItemsRequestValidator>();
+        services.AddScoped<IValidator<CreateCloudFolderRequest>, CreateCloudFolderRequestValidator>();
+        services.AddScoped<IValidator<MoveCloudItemRequest>, MoveCloudItemRequestValidator>();
+        services.AddScoped<IValidator<RenameCloudItemRequest>, RenameCloudItemRequestValidator>();
 
         return services;
     }
