@@ -67,6 +67,8 @@ public static class InfrastructureServiceRegistration
         services.AddHttpContextAccessor();
 
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+        services.AddScoped<IConnectedCloudAccountRepository, ConnectedCloudAccountRepository>();
+        services.AddScoped<ICloudTransferJobRepository, CloudTransferJobRepository>();
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<YekAbr.Services.Interfaces.Auth.IAuthService, AuthService>();
