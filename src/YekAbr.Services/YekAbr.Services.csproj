@@ -1,8 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\YekAbr.Domain\YekAbr.Domain.csproj" />
-    <ProjectReference Include="..\YekAbr.Infrastructure\YekAbr.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" Version="11.11.0" />
   </ItemGroup>
 
   <PropertyGroup>

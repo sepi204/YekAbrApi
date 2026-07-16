@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -17,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\YekAbr.Infrastructure\YekAbr.Infrastructure.csproj" />
+    <ProjectReference Include="..\YekAbr.Services\YekAbr.Services.csproj" />
     <ProjectReference Include="..\YekAbr.Domain\YekAbr.Domain.csproj" />
   </ItemGroup>
 
