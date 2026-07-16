@@ -8,11 +8,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using YekAbr.Domain.Interfaces;
 using YekAbr.Infrastructure.Cloud;
+using YekAbr.Infrastructure.Cloud.GoogleDrive;
 using YekAbr.Infrastructure.Identity;
 using YekAbr.Infrastructure.Persistence;
 using YekAbr.Infrastructure.Repositories;
 using YekAbr.Infrastructure.Security;
 using YekAbr.Infrastructure.Services.Auth;
+using YekAbr.Infrastructure.Services.Cloud;
 using YekAbr.Services.DTOs.Auth;
 using YekAbr.Services.Interfaces.Auth;
 using YekAbr.Services.Interfaces.Cloud;
@@ -26,8 +28,10 @@ public static class InfrastructureServiceRegistration
     {
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.Configure<CloudTokenEncryptionOptions>(configuration.GetSection(CloudTokenEncryptionOptions.SectionName));
+        services.Configure<GoogleDriveOptions>(configuration.GetSection(GoogleDriveOptions.SectionName));
 
         services.AddDataProtection();
+        services.AddMemoryCache();
 
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
@@ -79,8 +83,14 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<YekAbr.Services.Interfaces.Auth.IAuthService, AuthService>();
 
         services.AddSingleton<ICloudTokenEncryptionService, CloudTokenEncryptionService>();
+        services.AddSingleton<ICloudOAuthStateStore, MemoryCloudOAuthStateStore>();
         services.AddScoped<ICloudProviderClientFactory, CloudProviderClientFactory>();
-        // Provider clients (Google Drive, Dropbox, MEGA) will be registered as ICloudProviderClient in later phases.
+
+        services.AddHttpClient<IGoogleDriveProviderClient, GoogleDriveProviderClient>();
+        services.AddScoped<ICloudProviderClient>(sp => sp.GetRequiredService<IGoogleDriveProviderClient>());
+
+        services.AddScoped<IGoogleDriveConnectionService, GoogleDriveConnectionService>();
+        services.AddScoped<ICloudAccountService, CloudAccountService>();
 
         services.AddScoped<IValidator<RegisterRequest>, RegisterRequestValidator>();
         services.AddScoped<IValidator<LoginRequest>, LoginRequestValidator>();

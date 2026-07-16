@@ -17,7 +17,7 @@ public sealed class ConnectedCloudAccount
     public string ProviderAccountId { get; set; } = string.Empty;
 
     /// <summary>
-    /// Stored in plaintext for now; encryption can be introduced later without changing the domain shape.
+    /// Encrypted access token. Use ICloudTokenEncryptionService before persistence and after retrieval.
     /// </summary>
     public string AccessToken { get; set; } = string.Empty;
 
