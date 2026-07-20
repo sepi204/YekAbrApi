@@ -9,6 +9,7 @@ using YekAbr.Infrastructure.Security;
 using YekAbr.Services.Common.Responses;
 using YekAbr.Services.DTOs.Auth;
 using YekAbr.Services.Interfaces.Auth;
+using YekAbr.Services.Interfaces.Profile;
 using YekAbr.Services.Services.Auth;
 
 namespace YekAbr.Infrastructure.Services.Auth;
@@ -23,6 +24,7 @@ public sealed class AuthService : IAuthService
     private readonly SignInManager<AppUser> _signInManager;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IJwtTokenService _jwtTokenService;
+    private readonly IPublicUrlBuilder _publicUrlBuilder;
     private readonly JwtOptions _jwtOptions;
     private readonly IValidator<RegisterRequest> _registerValidator;
     private readonly IValidator<LoginRequest> _loginValidator;
@@ -35,6 +37,7 @@ public sealed class AuthService : IAuthService
         SignInManager<AppUser> signInManager,
         IRefreshTokenRepository refreshTokenRepository,
         IJwtTokenService jwtTokenService,
+        IPublicUrlBuilder publicUrlBuilder,
         Microsoft.Extensions.Options.IOptions<JwtOptions> jwtOptions,
         IValidator<RegisterRequest> registerValidator,
         IValidator<LoginRequest> loginValidator,
@@ -46,6 +49,7 @@ public sealed class AuthService : IAuthService
         _signInManager = signInManager;
         _refreshTokenRepository = refreshTokenRepository;
         _jwtTokenService = jwtTokenService;
+        _publicUrlBuilder = publicUrlBuilder;
         _jwtOptions = jwtOptions.Value;
         _registerValidator = registerValidator;
         _loginValidator = loginValidator;
@@ -251,13 +255,14 @@ public sealed class AuthService : IAuthService
         };
     }
 
-    private static UserDto MapUser(AppUser user, IReadOnlyCollection<string> roles)
+    private UserDto MapUser(AppUser user, IReadOnlyCollection<string> roles)
     {
         return new UserDto
         {
             Id = user.Id,
             Username = user.UserName!,
             Email = user.Email!,
+            ProfileImageUrl = _publicUrlBuilder.ToAbsoluteUrl(user.ProfileImageUrl),
             Roles = roles
         };
     }
